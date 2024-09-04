@@ -62,6 +62,21 @@ class MidiClip(Clip):
     def get_notes(self) -> List[Note]:
         raise NotImplementedError
 
+class Automation:
+    class Event:
+        # Value is in range [0, 1]
+        def __init__(self, time: ProjectTime, value: float):
+            self.time = time
+            self.value = value
+
+    @abstractmethod
+    def get_target(self) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_events(self) -> List[Event]:
+        raise NotImplementedError
+
 class Track:
     @abstractmethod
     def get_name(self) -> str:
@@ -79,6 +94,10 @@ class Track:
     def get_clips(self) -> List[Clip]:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_automations(self) -> List[Automation]:
+        raise NotImplementedError
+
 class Project:
     @abstractmethod
     def get_duration(self) -> ProjectTime:
@@ -90,6 +109,10 @@ class Project:
 
     @abstractmethod
     def get_tracks(self) -> List[Track]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_automations(self) -> List[Automation]:
         raise NotImplementedError
 
 class Parser:

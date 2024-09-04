@@ -7,7 +7,7 @@
 # @copyright Ajax Systems
 #
 
-from alsparse import Parser
+from alsparse import Parser, Color
 from ableton.entities import AbletonProject, AbletonTrack, AbletonAudioClip, \
     AbletonMidiClip
 import logging
@@ -26,7 +26,7 @@ def is_gzip(content: bytes) -> bool:
 
 class AbletonParser(Parser):
     @staticmethod
-    def __parse_and_verify_version(tree: ET.Element) -> Optional[Tuple[int, int, dict]]:
+    def __parse_and_verify_version(tree: ET.Element) -> Optional[Tuple[int, int, int, int, dict]]:
         # 'MinorVersion' = {str} '10.0_377'
         # 'MajorVersion' = {str} '5'
         # 'Creator' = {str} 'Ableton Live 10.1.7'
@@ -40,7 +40,8 @@ class AbletonParser(Parser):
 
         MINOR_REGEX = re.compile(r'(\d+)\.(\d+)_(\d+)')
         try:
-            minor = int(MINOR_REGEX.match(tree.attrib['MinorVersion']).group(1))
+            minorA, minorB, minorC = MINOR_REGEX.match(tree.attrib['MinorVersion']).groups()
+            minorA, minorB, minorC = int(minorA), int(minorB), int(minorC)
         except Exception as e:
             logger.error(f"Failed to parse MinorVersion of the project: {e}")
             return None
@@ -52,7 +53,64 @@ class AbletonParser(Parser):
             if key not in EXCEPT_KEYS:
                 metadata[key] = value
 
-        return major, minor, metadata
+        return major, minorA, minorB, minorC, metadata
+
+    @staticmethod
+    def __parse_color(index: int) -> Color:
+        return Color(0, 0, 0, 0)
+
+
+    def __parse_audio_track(self, track: ET.Element) -> AbletonTrack:
+        # We're interest only in AudioClips
+        # Hierarchical structure:
+        # <AudioTrack ...>
+        #    <DeviceChain>
+        #        <MainSequencer>
+        #            <Sample>
+        #                <ArrangerAutomation>
+        #                    <Events>
+
+        track_name = track.find('Name').find('EffectiveName').attrib['Value']
+        track_color = self.__parse_color(int(track.find('Color').attrib['Value']))
+
+        events = track.find('DeviceChain').find('MainSequencer').find('Sample').find('ArrangerAutomation').find('Events')
+        audio_clips = events.findall('AudioClip')
+        logger.debug("Found %d audio clips in track '%s'", len(audio_clips), track_name)
+
+        clips = []
+        for clip in audio_clips:
+            start = float(clip.find('CurrentStart').attrib['Value'])
+            end = float(clip.find('CurrentEnd').attrib['Value'])
+            name = clip.find('Name').attrib['Value']
+            color = self.__parse_color(int(clip.find('Color').attrib['Value']))
+            clips += [ AbletonAudioClip(name, color, start, end, []) ]
+
+        return AbletonTrack(track_name, track_color, clips, False)
+
+    def __parse_midi_track(self, clip: ET.Element) -> AbletonTrack:
+        pass
+
+    def __parse_tracks(self, tree: ET.Element) -> List[AbletonTrack]:
+        # Hierarchical structure:
+        # <Ableton ...>
+        #    <LiveSet>
+        #        <Tracks>
+        tracks = tree.find('LiveSet').find('Tracks')
+
+        audio_tracks = tracks.findall('AudioTrack')
+        return_tracks = tracks.findall('ReturnTrack')
+        midi_tracks = tracks.findall('MidiTrack')
+
+        tracks = []
+        logger.debug("Found %d audio tracks, %d return tracks, %d midi tracks", len(audio_tracks), len(return_tracks), len(midi_tracks))
+        for track in audio_tracks:
+            tracks += [ self.__parse_audio_track(track) ]
+        # for track in return_tracks:
+        #   tracks += [ self.__parse_return_track(track) ]
+        for track in midi_tracks:
+            tracks += [ self.__parse_midi_track(track) ]
+
+        return tracks
 
     def parse(self, content: bytes) -> Optional[AbletonProject]:
         logger.info("Parsing Ableton project")
@@ -80,9 +138,14 @@ class AbletonParser(Parser):
         data = self.__parse_and_verify_version(tree)
         if not data:
             return None
-        minor, major, metadata = data
-        logger.debug("Parsed version: %d.%d", major, minor)
-        project = AbletonProject(major, minor, metadata)
+        major, minorA, minorB, minorC, metadata = data
+        logger.debug("Parsed version: Major=%d, Minor=%d.%d.%d", major, minorA, minorB, minorC)
+
+        tracks = self.__parse_tracks(tree)
+        if not tracks:
+            return None
+
+        project = AbletonProject(major, minorA, minorB, minorC, metadata, tracks)
         return project
 
     @staticmethod

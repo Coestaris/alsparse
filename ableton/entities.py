@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import List
+from typing import List, Tuple
 
 #
 # @file entities
@@ -13,20 +13,27 @@ from alsparse import Project, Track, ProjectTime, ProjectStart, Color, \
 
 
 class AbletonAudioClip(AudioClip):
+    def __init__(self, name: str, color: Color, start: ProjectTime, end: ProjectTime, analyzed_data: List[float]):
+        self.name = name
+        self.color = color
+        self.start = start
+        self.end = end
+        self.analyzed_data = analyzed_data
+
     def get_name(self) -> str:
-        raise NotImplementedError
+        return self.name
 
     def get_color(self) -> Color:
-        raise NotImplementedError
+        return self.color
 
     def get_start(self) -> ProjectTime:
-        raise NotImplementedError
+        return self.start
 
     def get_end(self) -> ProjectTime:
-        raise NotImplementedError
+        return self.end
 
     def get_analyzed_data(self) -> List[float]:
-        raise NotImplementedError
+        return self.analyzed_data
     
 class AbletonMidiClip(MidiClip):
     def get_name(self) -> str:
@@ -45,23 +52,33 @@ class AbletonMidiClip(MidiClip):
         raise NotImplementedError
     
 class AbletonTrack(Track):
+    def __init__(self, name: str, color: Color, clips: List[Clip], freezed: bool):
+        self.name = name
+        self.color = color
+        self.clips = clips
+        self.freezed = freezed
+
     def get_name(self) -> str:
-        raise NotImplementedError
+        return self.name
 
     def get_color(self) -> Color:
-        raise NotImplementedError
+        return self.color
 
     def is_freezed(self) -> bool:
-        raise NotImplementedError
+        return self.freezed
 
     def get_clips(self) -> List[Clip]:
-        raise NotImplementedError
+        return self.clips
     
 class AbletonProject(Project):
-    def __init__(self, major_version: int, minor_version: int, metadata: dict):
+    def __init__(self, major_version: int, minorA: int, minorB: int,
+                 minorC: int, metadata: dict, tracks: List[AbletonTrack]):
         self.major_version = major_version
-        self.minor_version = minor_version
-        self.metadata = {}
+        self.minorA = minorA
+        self.minorB = minorB
+        self.minorC = minorC
+        self.metadata = metadata
+        self.tracks = tracks
 
     def get_duration(self) -> ProjectTime:
         raise NotImplementedError
@@ -70,7 +87,16 @@ class AbletonProject(Project):
         raise NotImplementedError
 
     def get_tracks(self) -> List[Track]:
-        raise NotImplementedError
+        return self.tracks
+
+    def get_major_version(self) -> int:
+        return self.major_version
+
+    def get_minor_version(self) -> Tuple[int, int, int]:
+        return self.minorA, self.minorB, self.minorC
+
+    def get_metadata(self) -> dict:
+        return self.metadata
 
     def __str__(self):
-        return f"AbletonProject(major_version={self.major_version}, minor_version={self.minor_version}, metadata={self.metadata}, tracks={self.get_tracks()}, duration={self.get_duration()}))"
+        return f"AbletonProject(major_version={self.major_version}, minor_version={self.minorA}.{self.minorB}.{self.minorC}, metadata={self.metadata})"

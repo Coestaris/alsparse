@@ -72,6 +72,11 @@ def main():
         return 1
 
     logging.info("Parsed file '%s'", input_file)
+    logging.info("Project: %s", project)
+    for track in project.get_tracks():
+        logging.info("  Track: %s", track.get_name())
+        for clip in track.get_clips():
+            logging.info("    Clip. Start: %s, End: %s", clip.get_start(), clip.get_end())
     return 0
 
 
