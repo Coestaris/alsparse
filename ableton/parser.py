@@ -16,42 +16,59 @@ import xml.etree.ElementTree as ET
 import gzip
 from typing import List, Optional, Tuple
 import re
+from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
-def is_xml(content: bytes) -> bool:
-    return content.startswith(b'<?xml version="1.0" encoding="UTF-8"?>')
-
-def is_gzip(content: bytes) -> bool:
-    return content.startswith(b'\x1f\x8b')
 
 class AbletonParser(Parser):
+    MINOR_REGEX = re.compile(r'(\d+)\.(\d+)_(\d+)')
+
+    # Some shortcuts to make some common paths more readable
+    AUTOMATION_SHORTCUTS = {
+        '${track_type}.DeviceChain.Mixer.Volume': 'Volume',
+        '${track_type}.DeviceChain.Mixer.On': 'On',
+        '${track_type}.DeviceChain.Mixer.Pan': 'Pan',
+        '${track_type}.DeviceChain.Mixer.Sends.TrackSendHolder.Send': 'Send',
+        '${track_type}.DeviceChain.Mixer.SplitStereoPanL': 'SplitStereoPanL',
+        '${track_type}.DeviceChain.Mixer.SplitStereoPanR': 'SplitStereoPanR',
+        '${track_type}.DeviceChain.DeviceChain.Devices': 'Plugins',
+
+        'MainTrack.DeviceChain.Mixer.Tempo': 'Tempo',
+        'MainTrack.DeviceChain.Mixer.TimeSignature': 'TimeSignature',
+    }
+
+    # Expand shortcuts with track types
+    for track_type in [ 'AudioTrack', 'MidiTrack', 'GroupTrack', 'ReturnTrack', 'MasterTrack' ]:
+        for shortcut, target in deepcopy(AUTOMATION_SHORTCUTS).items():
+            AUTOMATION_SHORTCUTS[shortcut.replace('${track_type}', track_type)] = target
+
+    @staticmethod
+    def is_xml(content: bytes) -> bool:
+        return content.startswith(b'<?xml version="1.0" encoding="UTF-8"?>')
+
+    @staticmethod
+    def is_gzip(content: bytes) -> bool:
+        return content.startswith(b'\x1f\x8b')
+
     @staticmethod
     def __parse_and_verify_version(tree: ET.Element) -> Optional[Tuple[int, int, int, int, dict]]:
-        # 'MinorVersion' = {str} '10.0_377'
-        # 'MajorVersion' = {str} '5'
-        # 'Creator' = {str} 'Ableton Live 10.1.7'
-        # 'Revision' = {str} 'f7eb4c8e0a49802359f4e078b341fdfb9d547a77'
-        # 'SchemaChangeCount' = {str} '3'
-        try:
-            major = int(tree.attrib['MajorVersion'])
-        except Exception as e:
-            logger.error(f"Failed to parse MajorVersion of the project: {e}")
-            return None
+        # Example:
+        #   'MinorVersion' = {str} '10.0_377'
+        #   'MajorVersion' = {str} '5'
+        #   'Creator' = {str} 'Ableton Live 10.1.7'
+        #   'Revision' = {str} 'f7eb4c8e0a49802359f4e078b341fdfb9d547a77'
+        #   'SchemaChangeCount' = {str} '3'
 
-        MINOR_REGEX = re.compile(r'(\d+)\.(\d+)_(\d+)')
-        try:
-            minorA, minorB, minorC = MINOR_REGEX.match(tree.attrib['MinorVersion']).groups()
-            minorA, minorB, minorC = int(minorA), int(minorB), int(minorC)
-        except Exception as e:
-            logger.error(f"Failed to parse MinorVersion of the project: {e}")
-            return None
+        major = int(tree.attrib['MajorVersion'])
+
+        match = AbletonParser.MINOR_REGEX.match(tree.attrib['MinorVersion'])
+        minorA, minorB, minorC = map(int, match.groups())
 
         # Put other keys from XML to metadata
         metadata = {}
-        EXCEPT_KEYS = ['MajorVersion', 'MinorVersion']
         for key, value in tree.attrib.items():
-            if key not in EXCEPT_KEYS:
+            if key not in ['MajorVersion', 'MinorVersion']:
                 metadata[key] = value
 
         return major, minorA, minorB, minorC, metadata
@@ -79,26 +96,10 @@ class AbletonParser(Parser):
 
         path = '.'.join(path)
 
-        SHORTCUTS = {
-            'MidiTrack.DeviceChain.Mixer.Volume': 'Volume',
-            'GroupTrack.DeviceChain.Mixer.Volume': 'Volume',
-            'AudioTrack.DeviceChain.Mixer.Volume': 'Volume',
-            'MainTrack.DeviceChain.Mixer.Volume': 'Volume',
-
-            'MidiTrack.DeviceChain.DeviceChain.Devices': 'Plugins',
-            'GroupTrack.DeviceChain.DeviceChain.Devices': 'Plugins',
-            'AudioTrack.DeviceChain.DeviceChain.Devices': 'Plugins',
-            'MainTrack.DeviceChain.DeviceChain.Devices': 'Plugins',
-
-            'MainTrack.DeviceChain.Mixer.Tempo': 'Tempo',
-            'MainTrack.DeviceChain.Mixer.TimeSignature': 'TimeSignature',
-        }
-
-        for shortcut, target in SHORTCUTS.items():
+        for shortcut, target in AbletonParser.AUTOMATION_SHORTCUTS.items():
             path = path.replace(shortcut, target)
 
         return path
-
 
     @staticmethod
     def __get_track_automation_envelopes(parent, track: ET.Element) -> List[AbletonAutomation]:
@@ -110,12 +111,12 @@ class AbletonParser(Parser):
 
         automations = []
         for envelope in envelopes:
-            #     <AutomationEnvelope Id="1">
-            #       <EnvelopeTarget>
-            #           <PointeeId Value="8638" />
-            #       <Automation>
-            #           <Events>
-            #               <FloatEvent Id="1" Time="0" Value="1" />
+            # <AutomationEnvelope Id="1">
+            #   <EnvelopeTarget>
+            #       <PointeeId Value="8638" />
+            #   <Automation>
+            #       <Events>
+            #           <FloatEvent Id="1" Time="0" Value="1" />
             target = AbletonParser.__resolve_automation_target(
                 int(envelope.find('EnvelopeTarget').find('PointeeId').attrib['Value']),
                 track)
@@ -131,7 +132,6 @@ class AbletonParser(Parser):
             automations += [ AbletonAutomation("unknown", Color(0, 0, 0, 0), parent, target, points) ]
 
         return automations
-
 
     @staticmethod
     def __get_track_color(track: ET.Element) -> Color:
@@ -249,7 +249,7 @@ class AbletonParser(Parser):
     def parse(self, content: bytes) -> Optional[AbletonProject]:
         logger.info("Parsing Ableton project")
 
-        if is_gzip(content):
+        if AbletonParser.is_gzip(content):
             logger.info("Detected GZIP compression. Trying to decompress")
 
             try:
@@ -258,7 +258,7 @@ class AbletonParser(Parser):
                 logger.error(f"Failed to decompress: {e}")
                 return None
 
-        if not is_xml(content):
+        if not AbletonParser.is_xml(content):
             logger.error("Invalid content: %s", content[:16])
             return None
 
@@ -293,4 +293,4 @@ class AbletonParser(Parser):
 
     @staticmethod
     def probe_content(content: bytes) -> bool:
-        return is_xml(content) or is_gzip(content)
+        return AbletonParser.is_xml(content) or AbletonParser.is_gzip(content)
