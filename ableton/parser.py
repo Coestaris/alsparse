@@ -9,11 +9,11 @@
 
 from alsparse import Parser, Color
 from ableton.entities import AbletonProject, AbletonTrack, AbletonAudioClip, \
-    AbletonMidiClip
+    AbletonMidiClip, AbletonAutomation
 import logging
 import xml.etree.ElementTree as ET
 import gzip
-from typing import List, overload, Optional, Tuple
+from typing import List, Optional, Tuple
 import re
 
 logger = logging.getLogger(__name__)
@@ -56,11 +56,46 @@ class AbletonParser(Parser):
         return major, minorA, minorB, minorC, metadata
 
     @staticmethod
+    def __get_track_automation_envelopes(parent, track: ET.Element) -> List[AbletonAutomation]:
+        # <AudioTrack ...>
+        #    <AutomationEnvelopes>
+        #        <Envelopes>
+        envelopes = track.find('AutomationEnvelopes').find('Envelopes')
+        logger.debug("Found %d automation envelopes", len(envelopes))
+
+        automations = []
+        for envelope in envelopes:
+            #     <AutomationEnvelope Id="1">
+            #       <EnvelopeTarget>
+            #           <PointeeId Value="8638" />
+            #       <Automation>
+            #           <Events>
+            #               <FloatEvent Id="1" Time="0" Value="1" />
+            target = envelope.find('EnvelopeTarget').find('PointeeId').attrib['Value']
+            events = envelope.find('Automation').find('Events')
+            points = []
+
+            for event in events:
+                time = float(event.attrib['Time'])
+                value = float(event.attrib['Value'])
+                points += [ (time, value) ]
+
+            automations += [ AbletonAutomation("unknown", target, Color(0, 0, 0, 0), points, parent) ]
+
+        return automations
+
+
+    @staticmethod
     def __parse_color(index: int) -> Color:
         return Color(0, 0, 0, 0)
 
 
-    def __parse_audio_track(self, track: ET.Element) -> AbletonTrack:
+    @staticmethod
+    def __get_track_name(track: ET.Element) -> str:
+        return track.find('Name').find('EffectiveName').attrib['Value']
+
+    @staticmethod
+    def __parse_audio_track(parent, tree: ET.Element) -> AbletonTrack:
         # We're interest only in AudioClips
         # Hierarchical structure:
         # <AudioTrack ...>
@@ -70,31 +105,75 @@ class AbletonParser(Parser):
         #                <ArrangerAutomation>
         #                    <Events>
 
-        track_name = track.find('Name').find('EffectiveName').attrib['Value']
-        track_color = self.__parse_color(int(track.find('Color').attrib['Value']))
+        track_name = AbletonParser.__get_track_name(tree)
+        track_color = AbletonParser.__parse_color(int(tree.find('Color').attrib['Value']))
 
-        events = track.find('DeviceChain').find('MainSequencer').find('Sample').find('ArrangerAutomation').find('Events')
+        events = tree.find('DeviceChain').find('MainSequencer').find('Sample').find('ArrangerAutomation').find('Events')
         audio_clips = events.findall('AudioClip')
         logger.debug("Found %d audio clips in track '%s'", len(audio_clips), track_name)
+
+        track = AbletonTrack(track_name, track_color, False, parent)
 
         clips = []
         for clip in audio_clips:
             start = float(clip.find('CurrentStart').attrib['Value'])
             end = float(clip.find('CurrentEnd').attrib['Value'])
             name = clip.find('Name').attrib['Value']
-            color = self.__parse_color(int(clip.find('Color').attrib['Value']))
-            clips += [ AbletonAudioClip(name, color, start, end, []) ]
+            color = AbletonParser.__parse_color(int(clip.find('Color').attrib['Value']))
+            clips += [ AbletonAudioClip(name, color, start, end, [], track) ]
+        track.set_clips(clips)
 
-        return AbletonTrack(track_name, track_color, clips, False)
+        automations = AbletonParser.__get_track_automation_envelopes(track, tree)
+        track.set_automations(automations)
 
-    def __parse_midi_track(self, clip: ET.Element) -> AbletonTrack:
-        pass
+        return track
 
-    def __parse_tracks(self, tree: ET.Element) -> List[AbletonTrack]:
+
+    @staticmethod
+    def __parse_midi_track(parent, tree: ET.Element) -> AbletonTrack:
+        # We're interest only in MidiClips
+        # Hierarchical structure:
+        # <MidiTrack ...>
+        #    <DeviceChain>
+        #        <MainSequencer>
+        #            <ClipTimeable>
+        #                <ArrangerAutomation>
+        #                    <Events>
+
+        track_name = AbletonParser.__get_track_name(tree)
+        track_color = AbletonParser.__parse_color(int(tree.find('Color').attrib['Value']))
+
+        events = tree.find('DeviceChain').find('MainSequencer').find('ClipTimeable').find('ArrangerAutomation').find('Events')
+        midi_clips = events.findall('MidiClip')
+        logger.debug("Found %d midi clips in track '%s'", len(midi_clips), track_name)
+
+        track = AbletonTrack(track_name, track_color, True, parent)
+
+        clips = []
+        for clip in midi_clips:
+            start = float(clip.find('CurrentStart').attrib['Value'])
+            end = float(clip.find('CurrentEnd').attrib['Value'])
+            name = clip.find('Name').attrib['Value']
+            color = AbletonParser.__parse_color(int(clip.find('Color').attrib['Value']))
+            clips += [ AbletonMidiClip(name, color, start, end, track) ]
+
+            # TODO: Parse notes
+
+        track.set_clips(clips)
+
+        automations = AbletonParser.__get_track_automation_envelopes(track, tree)
+        track.set_automations(automations)
+
+        return track
+
+
+    @staticmethod
+    def __parse_tracks(parent, tree: ET.Element) -> List[AbletonTrack]:
         # Hierarchical structure:
         # <Ableton ...>
         #    <LiveSet>
         #        <Tracks>
+        #            <AudioTrack ...>
         tracks = tree.find('LiveSet').find('Tracks')
 
         audio_tracks = tracks.findall('AudioTrack')
@@ -104,11 +183,11 @@ class AbletonParser(Parser):
         tracks = []
         logger.debug("Found %d audio tracks, %d return tracks, %d midi tracks", len(audio_tracks), len(return_tracks), len(midi_tracks))
         for track in audio_tracks:
-            tracks += [ self.__parse_audio_track(track) ]
+            tracks += [ AbletonParser.__parse_audio_track(parent, track) ]
         # for track in return_tracks:
-        #   tracks += [ self.__parse_return_track(track) ]
+        #   tracks += [ AbletonParser.__parse_return_track(parent, track) ]
         for track in midi_tracks:
-            tracks += [ self.__parse_midi_track(track) ]
+            tracks += [ AbletonParser.__parse_midi_track(parent, track) ]
 
         return tracks
 
@@ -141,11 +220,20 @@ class AbletonParser(Parser):
         major, minorA, minorB, minorC, metadata = data
         logger.debug("Parsed version: Major=%d, Minor=%d.%d.%d", major, minorA, minorB, minorC)
 
-        tracks = self.__parse_tracks(tree)
+        project = AbletonProject("unknown", major, minorA, minorB, minorC, metadata)
+        tracks = self.__parse_tracks(project, tree)
         if not tracks:
             return None
+        project.set_tracks(tracks)
 
-        project = AbletonProject(major, minorA, minorB, minorC, metadata, tracks)
+        master_automations = []
+        main_track = tree.find('LiveSet').find('MainTrack')
+        master_automations += self.__get_track_automation_envelopes(project, main_track)
+
+        # if not automations:
+        #     return None
+        project.set_automations(master_automations)
+
         return project
 
     @staticmethod
