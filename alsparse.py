@@ -22,7 +22,7 @@ class Color:
         self.b = b
         self.a = a
 
-class Clip:
+class Entity:
     @abstractmethod
     def get_name(self) -> str:
         raise NotImplementedError
@@ -31,6 +31,11 @@ class Clip:
     def get_color(self) -> Color:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_parent(self) -> Optional["Entity"]:
+        return None
+
+class Clip(Entity):
     @abstractmethod
     # Relative to the start of the project
     def get_start(self) -> ProjectTime:
@@ -62,7 +67,7 @@ class MidiClip(Clip):
     def get_notes(self) -> List[Note]:
         raise NotImplementedError
 
-class Automation:
+class Automation(Entity):
     class Event:
         # Value is in range [0, 1]
         def __init__(self, time: ProjectTime, value: float):
@@ -77,15 +82,7 @@ class Automation:
     def get_events(self) -> List[Event]:
         raise NotImplementedError
 
-class Track:
-    @abstractmethod
-    def get_name(self) -> str:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_color(self) -> Color:
-        raise NotImplementedError
-
+class Track(Entity):
     @abstractmethod
     def is_freezed(self) -> bool:
         raise NotImplementedError
@@ -98,7 +95,15 @@ class Track:
     def get_automations(self) -> List[Automation]:
         raise NotImplementedError
 
-class Project:
+class Project(Entity):
+    @abstractmethod
+    def get_daw(self) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_daw_version(self) -> str:
+        raise NotImplementedError
+
     @abstractmethod
     def get_duration(self) -> ProjectTime:
         raise NotImplementedError
