@@ -34,12 +34,13 @@ class AbletonParser(Parser):
         '${track_type}.DeviceChain.Mixer.SplitStereoPanR': 'SplitStereoPanR',
         '${track_type}.DeviceChain.DeviceChain.Devices': 'Plugins',
 
+
         'MainTrack.DeviceChain.Mixer.Tempo': 'Tempo',
         'MainTrack.DeviceChain.Mixer.TimeSignature': 'TimeSignature',
     }
 
     # Expand shortcuts with track types
-    for track_type in [ 'AudioTrack', 'MidiTrack', 'GroupTrack', 'ReturnTrack', 'MasterTrack' ]:
+    for track_type in [ 'AudioTrack', 'MidiTrack', 'GroupTrack', 'ReturnTrack', 'MainTrack' ]:
         for shortcut, target in deepcopy(AUTOMATION_SHORTCUTS).items():
             AUTOMATION_SHORTCUTS[shortcut.replace('${track_type}', track_type)] = target
 
