@@ -8,7 +8,8 @@ import sys
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
 
-from alsparse import parse_file
+from alsparse import parse_file, MidiTrack, MasterTrack, ReturnTrack, \
+    GroupTrack, AudioTrack
 import os
 import argparse
 
@@ -71,20 +72,31 @@ def main():
         logging.error("Failed to parse file '%s'", input_file)
         return 1
 
+    def get_track_type(track):
+        if isinstance(track, MidiTrack):
+            return "Midi Track"
+        elif isinstance(track, AudioTrack):
+            return "Audio Track"
+        elif isinstance(track, GroupTrack):
+            return "Group Track"
+        elif isinstance(track, ReturnTrack):
+            return "Return Track"
+        elif isinstance(track, MasterTrack):
+            return "Master Track"
+        else:
+            return "Unknown Track"
+
     logging.info("Parsed file \"%s\"", input_file)
     logging.info("Project: \"%s\" (Daw: %s, %s)", project.get_name(), project.get_daw(), project.get_daw_version())
     for track in project.get_tracks():
-        logging.info("  Track: \"%s\"", track.get_name())
+        logging.info("  %s: \"%s\"", get_track_type(track), track.get_name())
         for clip in track.get_clips():
             logging.info("    Clip: \"%s\". Start: %s, End: %s",  clip.get_name(), clip.get_start(), clip.get_end())
         for automation in track.get_automations():
             logging.info("    Automation: \"%s\". Events %d", automation.get_target(), len(automation.get_events()))
             for event in automation.get_events():
                 logging.debug("      Event: %s, %s", event.time, event.value)
-    for automation in project.get_automations():
-        logging.info("  Master automation: \"%s\". Events %d", automation.get_target(), len(automation.get_events()))
-        for event in automation.get_events():
-            logging.debug("    Event: %s, %s", event.time, event.value)
+
     return 0
 
 

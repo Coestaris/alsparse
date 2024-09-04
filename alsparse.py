@@ -95,6 +95,12 @@ class Track(Entity):
     def get_automations(self) -> List[Automation]:
         raise NotImplementedError
 
+class MidiTrack(Track): pass
+class AudioTrack(Track): pass
+class GroupTrack(Track): pass
+class ReturnTrack(Track): pass
+class MasterTrack(Track): pass
+
 class Project(Entity):
     @abstractmethod
     def get_daw(self) -> str:
@@ -114,10 +120,6 @@ class Project(Entity):
 
     @abstractmethod
     def get_tracks(self) -> List[Track]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_automations(self) -> List[Automation]:
         raise NotImplementedError
 
 class Parser:
