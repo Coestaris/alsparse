@@ -127,7 +127,11 @@ class AbletonParser(Parser):
 
             for event in events:
                 time = float(event.attrib['Time'])
-                value = float(event.attrib['Value'])
+                val = event.attrib['Value']
+                if val == 'true' or val == 'false':
+                    value = 1 if val == 'true' else 0
+                else:
+                    value = float(val)
                 points += [ (time, value) ]
 
             automations += [ AbletonAutomation("unknown", Color(0, 0, 0, 0), parent, target, points) ]
