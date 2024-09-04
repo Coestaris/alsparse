@@ -6,7 +6,7 @@ import os
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
 
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from typing import List, Optional
 import logging
 
@@ -95,11 +95,11 @@ class Track(Entity):
     def get_automations(self) -> List[Automation]:
         raise NotImplementedError
 
-class MidiTrack(Track): pass
-class AudioTrack(Track): pass
-class GroupTrack(Track): pass
-class ReturnTrack(Track): pass
-class MasterTrack(Track): pass
+class MidiTrack(Track, ABC): pass
+class AudioTrack(Track, ABC): pass
+class GroupTrack(Track, ABC): pass
+class ReturnTrack(Track, ABC): pass
+class MasterTrack(Track, ABC): pass
 
 class Project(Entity):
     @abstractmethod
