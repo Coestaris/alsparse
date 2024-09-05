@@ -4,7 +4,6 @@
 # @file entities
 # @date 03-09-2024
 # @author Maxim Kurylko <vk_vm@ukr.net>
-# @copyright Ajax Systems
 #
 
 from alsparse import Project, Track, ProjectTime, ProjectStart, Color, \

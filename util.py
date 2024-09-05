@@ -4,7 +4,6 @@
 # @file util
 # @date 05-09-2024
 # @author Maxim Kurylko <vk_vm@ukr.net>
-# @copyright Ajax Systems
 #
 
 import logging
