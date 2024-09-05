@@ -30,10 +30,14 @@ class AbletonEntity(Entity, ABC):
 
 class AbletonClip(AbletonEntity, Clip):
     def __init__(self, name: str, color: Color, parent: Track,
-                 start: ProjectTime, end: ProjectTime):
+                 start: ProjectTime, end: ProjectTime, disabled: bool = False):
         super().__init__(name, color, parent)
         self.start = start
         self.end = end
+        self.disabled = disabled
+
+    def get_disabled(self) -> bool:
+        return self.disabled
 
     def get_start(self) -> ProjectTime:
         return self.start
@@ -43,9 +47,9 @@ class AbletonClip(AbletonEntity, Clip):
 
 class AbletonAudioClip(AbletonClip, AudioClip):
     def __init__(self, name: str, color: Color, parent: Optional[Track],
-                 start: ProjectTime, end: ProjectTime,
+                 start: ProjectTime, end: ProjectTime, disabled,
                  analyzed_data: List[float]):
-        super().__init__(name, color, parent, start, end)
+        super().__init__(name, color, parent, start, end, disabled)
         self.analyzed_data = analyzed_data
 
     def get_analyzed_data(self) -> List[float]:
@@ -54,8 +58,8 @@ class AbletonAudioClip(AbletonClip, AudioClip):
 
 class AbletonMidiClip(AbletonClip, MidiClip):
     def __init__(self,  name: str, color: Color, parent: Optional[Track],
-                    start: ProjectTime, end: ProjectTime):
-        super().__init__(name, color, parent, start, end)
+                    start: ProjectTime, end: ProjectTime, disabled):
+        super().__init__(name, color, parent, start, end, disabled)
         self.notes = []
 
     def set_notes(self, notes: List[MidiClip.Note]):
@@ -98,6 +102,12 @@ class AbletonTrack(AbletonEntity, Track):
     def get_automations(self) -> List[AbletonAutomation]:
         return self.automations
 
+    def get_duration(self) -> ProjectTime:
+        if not self.clips:
+            return 0
+
+        return max((clip.get_end() for clip in self.clips))
+
 class AbletonMidiTrack(AbletonTrack, MidiTrack): pass
 class AbletonAudioTrack(AbletonTrack, AudioTrack): pass
 class AbletonGroupTrack(AbletonTrack, GroupTrack): pass
@@ -106,6 +116,19 @@ class AbletonMasterTrack(AbletonTrack, MasterTrack): pass
 
 
 class AbletonProject(AbletonEntity, Project):
+    TIME_SLICE = 1 / 1000
+
+    def __calculate_duration(self):
+        if not self.tracks:
+            return 0
+
+        return max([track.get_duration() for track in self.tracks])
+
+    def __build_tempo_cache(self):
+        # for track in self.tracks:
+        #     self.tempo_cache.append([track.get_tempo(at) for at in range(self.duration)])
+        pass
+
     def __init__(self, major_version: int, minorA: int, minorB: int, minorC: int, metadata: dict):
         super().__init__("Project", Color(0, 0, 0, 0), None)
 
@@ -117,14 +140,23 @@ class AbletonProject(AbletonEntity, Project):
 
         self.tracks = []
 
+        self.__duration = 0
+        self.__tempo_cache = []
+        self.__base_tempo = 0
+
     def set_tracks(self, tracks: List[Track]):
         self.tracks = tracks
+        self.__duration = self.__calculate_duration()
+        self.__build_tempo_cache()
 
     def get_duration(self) -> ProjectTime:
-        raise NotImplementedError
+        return self.__duration
 
     def get_tempo(self, at: ProjectTime = ProjectStart) -> ProjectTime:
-        raise NotImplementedError
+        if at == ProjectStart:
+            return self.__base_tempo
+
+        return self.__tempo_cache[int(at / AbletonProject.TIME_SLICE)]
 
     def get_tracks(self) -> List[Track]:
         return self.tracks

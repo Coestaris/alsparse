@@ -43,6 +43,10 @@ class Entity:
 
 class Clip(Entity):
     @abstractmethod
+    def get_disabled(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     # Relative to the start of the project
     def get_start(self) -> ProjectTime:
         raise NotImplementedError
