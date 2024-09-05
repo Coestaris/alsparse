@@ -6,7 +6,7 @@
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
 
-from alsparse import Project, Track, ProjectTime, ProjectStart, Color, \
+from alsparse.alsparse import Project, Track, ProjectTime, ProjectStart, Color, \
     AudioClip, MidiClip, Clip, Automation, Entity, MidiTrack, AudioTrack, \
     ReturnTrack, GroupTrack, MasterTrack
 from typing import List, Tuple, Optional

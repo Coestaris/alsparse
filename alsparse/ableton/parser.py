@@ -6,8 +6,8 @@
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
 
-from alsparse import Parser, Color
-from ableton.entities import AbletonProject, AbletonTrack, AbletonAudioClip, \
+from alsparse.alsparse import Parser, Color
+from alsparse.ableton.entities import AbletonProject, AbletonTrack, AbletonAudioClip, \
     AbletonMidiClip, AbletonAutomation, AbletonGroupTrack, AbletonMidiTrack, \
     AbletonAudioTrack, AbletonReturnTrack, AbletonMasterTrack
 import logging

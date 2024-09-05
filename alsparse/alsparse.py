@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-import os
+
 #
 # @file alsparse
 # @date 03-09-2024
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
 
+import sys
+sys.path.append(".")
+
 from abc import abstractmethod, ABC
 from typing import List, Optional
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +150,7 @@ class Parser:
 
 
 
-from ableton.parser import AbletonParser
+from alsparse.ableton.parser import AbletonParser
 
 IMPLEMENTATIONS = [AbletonParser]
 
