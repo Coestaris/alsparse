@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-import logging
-import sys
 
 #
-# @file test.py
+# @file dump.py
 # @date 03-09-2024
 # @author Maxim Kurylko <vk_vm@ukr.net>
 #
@@ -12,28 +10,12 @@ from alsparse import parse_file, MidiTrack, MasterTrack, ReturnTrack, \
     GroupTrack, AudioTrack
 import os
 import argparse
+import logging
+from util import setup_logging
 
+__description__ = "Simple CLI tool to dump information from Ableton project files"
+__version__ = "0.1.0"
 
-__description__ = "Test script"
-__version__ = "1.0.0"
-
-class Fore:
-    GREEN = "\x1b[32m"
-    CYAN = "\x1b[36m"
-    RED = "\x1b[31m"
-    YELLOW = "\x1b[33m"
-    RESET = "\x1b[39m"
-
-
-def get_format_string(colored: bool, details: bool) -> str:
-    green = Fore.GREEN if colored else ""
-    cyan = Fore.CYAN if colored else ""
-    reset = Fore.RESET if colored else ""
-
-    if details:
-        return f"{green}%(asctime)s{reset} - {cyan}%(name)s:%(funcName)s:%(lineno)d{reset} - %(levelname)s - %(message)s"
-    else:
-        return f"{green}%(asctime)s{reset} - {cyan}%(name)s{reset} - %(levelname)s - %(message)s"
 
 def parse_args():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, prog=os.path.basename(__file__))
@@ -46,19 +28,6 @@ def parse_args():
     parser.add_argument("input", help="Input file")
     return parser.parse_args()
 
-def setup_logging(args):
-    # Set up logging
-    if not args.colorless:
-        logging.addLevelName(logging.CRITICAL, f"{Fore.RED}{logging.getLevelName(logging.CRITICAL)}{Fore.RESET}")
-        logging.addLevelName(logging.ERROR, f"{Fore.RED}{logging.getLevelName(logging.ERROR)}{Fore.RESET}")
-        logging.addLevelName(logging.WARNING, f"{Fore.YELLOW}{logging.getLevelName(logging.WARNING)}{Fore.RESET}")
-        logging.addLevelName(logging.INFO, f"{Fore.GREEN}{logging.getLevelName(logging.INFO)}{Fore.RESET}")
-        logging.addLevelName(logging.DEBUG, f"{Fore.CYAN}{logging.getLevelName(logging.DEBUG)}{Fore.RESET}")
-
-    logging.getLogger().setLevel(logging.getLevelName(args.log.upper()))
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter(get_format_string(not args.colorless, args.log == "debug")))
-    logging.getLogger().addHandler(handler)
 
 def main():
     args = parse_args()
@@ -91,7 +60,7 @@ def main():
     for track in project.get_tracks():
         logging.info("  %s: \"%s\"", get_track_type(track), track.get_name())
         for clip in track.get_clips():
-            logging.info("    Clip: \"%s\". Start: %s, End: %s",  clip.get_name(), clip.get_start(), clip.get_end())
+            logging.info("    Clip: \"%s\". Start: %.2f, End: %.2f",  clip.get_name(), clip.get_start(), clip.get_end())
         for automation in track.get_automations():
             logging.info("    Automation: \"%s\". Events %d", automation.get_target(), len(automation.get_events()))
             for event in automation.get_events():

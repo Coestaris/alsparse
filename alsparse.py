@@ -16,6 +16,8 @@ ProjectTime = float
 ProjectStart = 0
 
 class Color:
+    DEFAULT = (0, 0, 0, 255)
+
     def __init__(self, r: int, g: int, b: int, a: int = 255):
         self.r = r
         self.g = g
