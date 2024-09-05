@@ -196,7 +196,8 @@ class AbletonParser(Parser):
             end = float(clip.find('CurrentEnd').attrib['Value'])
             name = clip.find('Name').attrib['Value']
             color = AbletonParser.__get_track_color(clip)
-            clips += [ AbletonAudioClip(name, color, track, start, end, []) ]
+            disabled = clip.find('Disabled').attrib['Value'] == 'true'
+            clips += [ AbletonAudioClip(name, color, track, start, end, disabled, [])]
         track.set_clips(clips)
 
         automations = AbletonParser.__get_track_automation_envelopes(track, tree)
@@ -228,7 +229,8 @@ class AbletonParser(Parser):
             end = float(clip.find('CurrentEnd').attrib['Value'])
             name = clip.find('Name').attrib['Value']
             color = AbletonParser.__get_track_color(clip)
-            clips += [ AbletonMidiClip(name, color, track, start, end) ]
+            disabled = clip.find('Disabled').attrib['Value'] == 'true'
+            clips += [ AbletonMidiClip(name, color, track, start, end, disabled) ]
 
             # TODO: Parse notes
 
@@ -273,24 +275,28 @@ class AbletonParser(Parser):
                 <MainTrack ...>
         """
 
-        tracks = tree.find('LiveSet').find('Tracks')
-
-        audio_tracks = tracks.findall('AudioTrack')
-        group_tracks = tracks.findall('GroupTrack')
-        return_tracks = tracks.findall('ReturnTrack')
-        midi_tracks = tracks.findall('MidiTrack')
-        main_track = tree.find('LiveSet').find('MainTrack')
-
+        # We need to keep order of the tracks, so we can't use a dictionary
+        xml_tracks = tree.find('LiveSet').find('Tracks').findall('*')
         tracks = []
-        for track in audio_tracks:
-            tracks += [ AbletonParser.__parse_audio_track(parent, track) ]
-        for track in return_tracks:
-          tracks += [ AbletonParser.__parse_simple_track(AbletonReturnTrack, parent, track) ]
-        for track in group_tracks:
-            tracks += [ AbletonParser.__parse_simple_track(AbletonGroupTrack, parent, track) ]
-        for track in midi_tracks:
-            tracks += [ AbletonParser.__parse_midi_track(parent, track) ]
-        tracks += [ AbletonParser.__parse_simple_track(AbletonMasterTrack, parent, main_track) ]
+        for track in xml_tracks:
+            if track.tag == 'AudioTrack':
+                tracks += [ AbletonParser.__parse_audio_track(parent, track) ]
+            elif track.tag == 'MidiTrack':
+                tracks += [ AbletonParser.__parse_midi_track(parent, track) ]
+            elif track.tag == 'GroupTrack':
+                tracks += [ AbletonParser.__parse_simple_track(AbletonGroupTrack, parent, track) ]
+            elif track.tag == 'ReturnTrack':
+                tracks += [ AbletonParser.__parse_simple_track(AbletonReturnTrack, parent, track) ]
+            else:
+                logging.warning("Unknown track type: %s", track.tag)
+
+        master_track = tree.find('LiveSet').find('MainTrack')
+        if not master_track:
+            master_track = tree.find('LiveSet').find('MasterTrack')
+        if not master_track:
+            logging.warning("Main track not found")
+        else:
+            tracks += [ AbletonParser.__parse_simple_track(AbletonMasterTrack, parent, master_track) ]
 
         return tracks
 
