@@ -129,7 +129,7 @@ class AbletonProject(AbletonEntity, Project):
         #     self.tempo_cache.append([track.get_tempo(at) for at in range(self.duration)])
         pass
 
-    def __init__(self, major_version: int, minorA: int, minorB: int, minorC: int, metadata: dict):
+    def __init__(self, major_version: int, minorA: int, minorB: int, minorC: int, metadata: dict, hash: str):
         super().__init__("Project", Color(0, 0, 0, 0), None)
 
         self.major_version = major_version
@@ -139,10 +139,14 @@ class AbletonProject(AbletonEntity, Project):
         self.metadata = metadata
 
         self.tracks = []
+        self.hash = hash
 
         self.__duration = 0
         self.__tempo_cache = []
         self.__base_tempo = 0
+
+    def get_hash(self) -> str:
+        return self.hash
 
     def set_tracks(self, tracks: List[Track]):
         self.tracks = tracks

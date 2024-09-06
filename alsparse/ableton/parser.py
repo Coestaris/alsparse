@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 
 #
 # @file parser
@@ -330,8 +331,11 @@ class AbletonParser(Parser):
         major, minorA, minorB, minorC, metadata = data
         logger.debug("Parsed version: Major=%d, Minor=%d.%d.%d", major, minorA, minorB, minorC)
 
+        # MD5 hash of the content
+        hash = hashlib.md5(content).hexdigest()
+
         # Process tracks
-        project = AbletonProject(major, minorA, minorB, minorC, metadata)
+        project = AbletonProject(major, minorA, minorB, minorC, metadata, hash)
         tracks = self.__parse_tracks(project, tree)
         if not tracks:
             return None
