@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import pickle
+import shutil
+import subprocess
 #
 # @file dump.py
 # @date 03-09-2024
@@ -7,9 +9,11 @@ import pickle
 #
 
 import sys
+import tempfile
 from abc import abstractmethod
 from typing import List, Optional
 
+from PIL import ImageDraw
 from fontTools.feaLib.variableScalar import Location
 
 sys.path.append(".")
@@ -67,6 +71,7 @@ def parse_args():
     parser.add_argument("-c", "--colorless", action="store_true", help="Disable colored output")
     parser.add_argument("input", help="Input file")
     parser.add_argument("-r", "--renderer", type=str, default="dot", choices=["png", "ffmpeg" ], help="Renderer to use")
+    parser.add_argument("--link-audio", type=str, help="Link audio file", default=None)
     parser.add_argument("-w", "--width", type=int, default=1920, help="Width of the output image")
     parser.add_argument("-hh", "--height", type=int, default=1080, help="Height of the output image")
     parser.add_argument("-f", "--fps", type=float, default=30, help="FPS of the output video")
@@ -155,7 +160,7 @@ class TimeMachine:
         self.cache = list(map(list, zip(*self.cache)))
         pass
 
-    def __init__(self, project: Project, render_info: RenderInfo, time_slice: float = 1 / 1000, cache=None):
+    def __init__(self, project: Project, render_info: RenderInfo, time_slice: float = 1 / 2000, cache=None):
         self.project = project
         self.render_info = render_info
         self.time_slice = time_slice
@@ -172,7 +177,7 @@ class TimeMachine:
 
     def get_slice(self, at: ProjectTime) -> List[Optional[SlicedTrack]]:
         at_slice = int(at / self.time_slice)
-        if at_slice >= len(self.cache):
+        if at_slice >= len(self.cache) or at_slice < 0:
             return [None] * self.actual_tracks
 
         return self.cache[int(at / self.time_slice)]
@@ -203,26 +208,126 @@ class PixelBuffer:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        self.buffer = [[0] * width for _ in range(height)]
+        self.fb = bytearray(width * height * 3)
 
-    def __color_to_rgb(self, color: Color) -> int:
-        return (color.r << 16) | (color.g << 8) | color.b
+    def blit(self, x: int, y: int, rgb: int):
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            return
 
-    def set_pixel(self, x: int, y: int, color: Color):
-        self.buffer[y][x] = self.__color_to_rgb(color)
+        offset = (y * self.width + x) * 3
+        self.fb[offset] = (rgb >> 16) & 0xFF
+        self.fb[offset + 1] = (rgb >> 8) & 0xFF
+        self.fb[offset + 2] = rgb & 0xFF
 
-    def save(self, path: str):
-        # Save buffer to file using PIL
-        import PIL.Image
-        img = PIL.Image.new("RGB", (self.width, self.height))
-        for y in range(self.height):
-            for x in range(self.width):
-                img.putpixel((x, y), self.buffer[y][x])
+    def get_raw(self) -> bytes:
+        header = bytearray(f"P6\n{self.width} {self.height}\n255\n", "utf-8")
+        return header + self.fb
 
-        img.save(path)
+    def save(self, path: str, frame_index: int = 0):
+        with open(path, "wb") as f:
+            f.write(self.get_raw())
 
     def get_width(self) -> int: return self.width
     def get_height(self) -> int: return self.height
+
+class Gradient:
+    def __init__(self, start: Color, end: Color):
+        self.start = start
+        self.end = end
+
+    # Value is in range [0, 1]
+    def get_value_at(self, value: float) -> Color:
+        r = self.start.r + (self.end.r - self.start.r) * value
+        g = self.start.g + (self.end.g - self.start.g) * value
+        b = self.start.b + (self.end.b - self.start.b) * value
+        a = self.start.a + (self.end.a - self.start.a) * value
+
+        return Color(r, g, b, a)
+
+class VisualConfig:
+    def __init__(self, track_height: int, track_gap: int, centerize: bool,
+                 x_window: float, track_colors: Optional[Gradient] = None,
+                 border_colors: Optional[Gradient] = None):
+        self.track_height = track_height
+        self.track_gap = track_gap
+        self.centerize = centerize
+        self.x_window = x_window
+
+        if track_colors is None:
+            self.track_colors = Gradient(Color.DEFAULT, Color.DEFAULT)
+        else:
+            self.track_colors = track_colors
+
+        if border_colors is None:
+            self.border_colors = Gradient(Color.DEFAULT, Color.DEFAULT)
+        else:
+            self.border_colors = border_colors
+
+    def get_track_height(self) -> int: return self.track_height
+    def get_track_gap(self) -> int: return self.track_gap
+    def get_centerize(self) -> bool: return self.centerize
+    def get_x_window(self) -> float: return self.x_window
+    def get_track_colors(self) -> Gradient: return self.track_colors
+    def get_border_colors(self) -> Gradient: return self.border_colors
+
+class FrameTask:
+    def __init__(self,
+                 machine: TimeMachine, render_info: RenderInfo, visual_config: VisualConfig,
+                 tempo: float, x_offset: float, y_offset: float, index: int):
+        self.machine = machine
+        self.render_info = render_info
+        self.visual_config = visual_config
+
+        self.tempo = tempo
+        self.x_offset = x_offset
+        self.y_offset = y_offset
+        self.index = index
+
+    def run(self, pipe):
+        buffer = PixelBuffer(self.render_info.width, self.render_info.height)
+
+        track_colors = []
+        for i in range(self.machine.get_actual_tracks()):
+            track_colors.append(self.visual_config.get_track_colors().get_value_at(i / self.machine.get_actual_tracks()).to_rgb888())
+        border_colors = []
+        for i in range(self.machine.get_actual_tracks()):
+            border_colors.append(self.visual_config.get_border_colors().get_value_at(i / self.machine.get_actual_tracks()).to_rgb888())
+        height = int(self.visual_config.get_track_height())
+
+        slice = None
+        for j in range(0, self.render_info.width, 1):
+            prev_slice = slice
+
+            # Display only X_WINDOW of samples stretched to the whole width
+            slice = self.machine.get_slice(self.x_offset + j / self.render_info.width * self.visual_config.get_x_window())
+            for i in range(self.machine.get_actual_tracks()):
+                color = None
+
+                if slice[i]:
+                    if prev_slice and not prev_slice[i]:
+                        color = border_colors[i]
+                    else:
+                        color = track_colors[i]
+                else:
+                    if prev_slice and prev_slice[i]:
+                        color = border_colors[i]
+
+                if color:
+                    base_color = color
+                    for y in range(int(height)):
+                        if y == 0 or y == height - 1:
+                            color = border_colors[i]
+                        else:
+                            color = base_color
+
+                        buffer.blit(
+                            j,
+                            int(i * height + y + i * self.visual_config.get_track_gap() + self.y_offset),
+                            color)
+
+        raw = buffer.get_raw()
+        pipe.write(raw)
+
 
 def main():
     args, other = parse_args()
@@ -255,22 +360,56 @@ def main():
     else:
         machine = TimeMachine(project, render_info)
 
-    buffer = PixelBuffer(args.width, args.height)
-
     actual_tracks = machine.get_actual_tracks()
     logging.info("Actual tracks: %d", actual_tracks)
 
-    TRACK_HEIGHT = args.height / actual_tracks
-    SLICE_WIDTH = project.get_duration() / args.width
+    visual_config = VisualConfig(
+        20, 3, True, 5,
+        Gradient(Color(255, 0, 0, 255), Color(0, 255, 0, 255)),
+        Gradient(Color(255, 255, 255, 255), Color(255, 255, 255, 255))
+    )
 
-    for j in range(0, args.width, 1):
-        slice = machine.get_slice(j * SLICE_WIDTH)
-        for i in range(actual_tracks):
-            if slice[i]:
-                for y in range(int(TRACK_HEIGHT)):
-                    buffer.set_pixel(j, int(i * TRACK_HEIGHT + y), Color(255, 255, 255, 255))
+    START_X = 0
+    END_X = float(project.get_duration())
 
-    buffer.save("output.png")
+    y_offset = 0
+    if visual_config.get_centerize():
+        y_offset = (args.height - actual_tracks * visual_config.get_track_height() -
+                    (actual_tracks - 1) * visual_config.get_track_gap()) // 2
+
+    # Generate tasks
+    index = 0
+    tasks = []
+    x_offset = START_X
+    while x_offset < END_X:
+        tempo = project.get_tempo(x_offset)
+        tasks.append(FrameTask(machine, render_info, visual_config, tempo, x_offset, y_offset, index))
+        index += 1
+        # Video frame step is 1 / fps
+        # Project step is 1 / get_tempo(x_offset)
+        x_offset += (tempo / args.fps) / 60
+
+    # Setup ffmpeg
+    ffmpeg_args = ["ffmpeg", "-r", str(args.fps), "-thread_queue_size", "4096" ]
+    # Set input format to rgb888
+    # ffmpeg_args += [ "-s", f"{args.width}x{args.height}", "-i", f"{outdir}/%d.ppm" ]
+    # Read from pipe
+    ffmpeg_args += [ "-f", "image2pipe", "-s", f"{args.width}x{args.height}", "-i", "pipe:0" ]
+    # Link audio if provided
+    if args.link_audio:
+        ffmpeg_args.extend([ "-i", args.link_audio, "-c:a", "aac", "-b:a", "192k" ])
+    # Set output format to mp4
+    ffmpeg_args += [ "-vcodec", "libx264", "-crf", "25", "-pix_fmt", "yuv420p", "-y", "output.mp4"]
+
+    logging.info("Running ffmpeg: %s", " ".join(ffmpeg_args))
+    ffmpeg = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE)
+
+    logging.info("Rendering %d frames", len(tasks))
+    for task in tasks:
+        task.run(ffmpeg.stdin)
+
+    ffmpeg.stdin.close()
+    ffmpeg.wait()
 
     return 0
 
