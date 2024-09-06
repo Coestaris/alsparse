@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import pickle
 #
 # @file dump.py
 # @date 03-09-2024
@@ -7,7 +7,10 @@
 #
 
 import sys
+from abc import abstractmethod
 from typing import List, Optional
+
+from fontTools.feaLib.variableScalar import Location
 
 sys.path.append(".")
 
@@ -67,6 +70,7 @@ def parse_args():
     parser.add_argument("-w", "--width", type=int, default=1920, help="Width of the output image")
     parser.add_argument("-hh", "--height", type=int, default=1080, help="Height of the output image")
     parser.add_argument("-f", "--fps", type=float, default=30, help="FPS of the output video")
+    parser.add_argument("--use-cached-time-machine", action="store_true", default=False, help="Use cached time machine")
     parser.add_argument("--render-system-tracks", action="store_true", default=False, help="Render system tracks (master, return, group)")
     parser.add_argument("--render-automations", action="store_true", default=False, help="Render automations")
     parser.add_argument("--render-disabled-clips", action="store_true", default=False, help="Render disabled clips")
@@ -125,22 +129,24 @@ class TimeMachine:
 
         return None
 
-    def __build_cache(self):
-        tracks = self.project.get_tracks()
+    def __filter_tracks(self):
+        self.tracks = self.project.get_tracks()
         if not self.render_info.render_system_tracks:
-            tracks = [track for track in tracks if
+            self.tracks = [track for track in self.tracks if
                       not isinstance(track, (MasterTrack, ReturnTrack, GroupTrack))]
 
-        slices = int(self.project.get_duration() / self.time_slice)
+        self.slices = int(self.project.get_duration() / self.time_slice)
 
         logging.info("Building cache for %d slices (slice duration: %f), tracks: %d",
-                     slices, self.time_slice, len(tracks))
+                     self.slices, self.time_slice, len(self.tracks))
 
-        self.actual_tracks = len(tracks)
+        self.actual_tracks = len(self.tracks)
+
+    def _build_cache(self):
         self.cache = []
-        for track in tracks:
-            arr = [None] * slices
-            for i in range(slices):
+        for track in self.tracks:
+            arr = [None] * self.slices
+            for i in range(self.slices):
                 arr[i] = self.__have_track(track, i * self.time_slice)
 
             self.cache.append(arr)
@@ -149,12 +155,17 @@ class TimeMachine:
         self.cache = list(map(list, zip(*self.cache)))
         pass
 
-    def __init__(self, project: Project, render_info: RenderInfo, time_slice: float = 1 / 1000):
+    def __init__(self, project: Project, render_info: RenderInfo, time_slice: float = 1 / 1000, cache=None):
         self.project = project
         self.render_info = render_info
         self.time_slice = time_slice
 
-        self.__build_cache()
+        self.__filter_tracks()
+
+        if cache is None:
+            self._build_cache()
+        else:
+            self.cache = cache
 
     def get_actual_tracks(self) -> int:
         return self.actual_tracks
@@ -165,6 +176,27 @@ class TimeMachine:
             return [None] * self.actual_tracks
 
         return self.cache[int(at / self.time_slice)]
+
+class FileCachedTimeMachine(TimeMachine):
+    def __get_location(self, hash: str) -> str:
+        import tempfile
+        return os.path.join(tempfile.gettempdir(), f"alsparse_{hash}.cache")
+
+    def __init__(self, project: Project, render_info: RenderInfo, time_slice: float = 1 / 1000):
+        super().__init__(project, render_info, time_slice, [])
+
+        hash = project.get_hash()
+        location = self.__get_location(hash)
+
+        if os.path.exists(location):
+            logging.info("Loading cache from '%s'", location)
+            with open(location, "rb") as f:
+                self.cache = pickle.load(f)
+        else:
+            self._build_cache()
+            logging.info("Saving cache to '%s'", location)
+            with open(location, "wb") as f:
+                pickle.dump(self.cache, f)
 
 
 class PixelBuffer:
@@ -217,7 +249,11 @@ def main():
     render_info = RenderInfo(args.width, args.height, args.fps,
                              args.render_system_tracks, args.render_automations,
                              args.render_disabled_clips)
-    machine = TimeMachine(project, render_info)
+
+    if args.use_cached_time_machine:
+        machine = FileCachedTimeMachine(project, render_info)
+    else:
+        machine = TimeMachine(project, render_info)
 
     buffer = PixelBuffer(args.width, args.height)
 

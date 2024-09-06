@@ -132,6 +132,10 @@ class Project(Entity):
     def get_tracks(self) -> List[Track]:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_hash(self) -> str:
+        raise NotImplementedError
+
 class Parser:
     @abstractmethod
     def parse(self, content: bytes) -> Optional[Project]:
