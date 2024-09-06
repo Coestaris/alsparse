@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from abc import abstractmethod
+import random
 from typing import List, Optional
 
 from PIL import ImageDraw
@@ -231,12 +232,20 @@ class PixelBuffer:
     def get_height(self) -> int: return self.height
 
 class Gradient:
-    def __init__(self, start: Color, end: Color):
+    def __init__(self, start: Color, end: Color, variation: float = 0.2):
         self.start = start
         self.end = end
+        self.variation = variation
+
+    def get_variation(self) -> float: return self.variation
 
     # Value is in range [0, 1]
     def get_value_at(self, value: float) -> Color:
+        if value < 0:
+            value = 0
+        if value > 1:
+            value = 1
+
         r = self.start.r + (self.end.r - self.start.r) * value
         g = self.start.g + (self.end.g - self.start.g) * value
         b = self.start.b + (self.end.b - self.start.b) * value
@@ -284,14 +293,24 @@ class FrameTask:
         self.index = index
 
     def run(self, pipe):
+        random.seed(0)
+
         buffer = PixelBuffer(self.render_info.width, self.render_info.height)
 
         track_colors = []
+        track_variantion = self.visual_config.get_track_colors().get_variation()
         for i in range(self.machine.get_actual_tracks()):
-            track_colors.append(self.visual_config.get_track_colors().get_value_at(i / self.machine.get_actual_tracks()).to_rgb888())
+            val = i / self.machine.get_actual_tracks()
+            val += random.uniform(- track_variantion, track_variantion)
+            track_colors.append(self.visual_config.get_track_colors().get_value_at(val).to_rgb888())
+
         border_colors = []
+        border_variantion = self.visual_config.get_border_colors().get_variation()
         for i in range(self.machine.get_actual_tracks()):
-            border_colors.append(self.visual_config.get_border_colors().get_value_at(i / self.machine.get_actual_tracks()).to_rgb888())
+            val = i / self.machine.get_actual_tracks()
+            val += random.uniform(- border_variantion, border_variantion)
+            border_colors.append(self.visual_config.get_border_colors().get_value_at(val).to_rgb888())
+
         height = int(self.visual_config.get_track_height())
 
         slice = None
@@ -364,12 +383,13 @@ def main():
     logging.info("Actual tracks: %d", actual_tracks)
 
     visual_config = VisualConfig(
-        20, 3, True, 5,
-        Gradient(Color(255, 0, 0, 255), Color(0, 255, 0, 255)),
-        Gradient(Color(255, 255, 255, 255), Color(255, 255, 255, 255))
+        15, 1, True, 4,
+        Gradient(Color(227, 218, 100, 255), Color(100, 214, 227, 255), 0.3),
+        Gradient(Color(227 - 50, 218 - 50, 100 - 50, 255), Color(100 - 50, 214 - 50, 227 - 50, 255), 0.3)
     )
 
     START_X = 0
+    END_X = float(project.get_duration())
     END_X = float(project.get_duration())
 
     y_offset = 0
