@@ -20,13 +20,17 @@ ProjectTime = float
 ProjectStart = 0
 
 class Color:
-    DEFAULT = (0, 0, 0, 255)
-
     def __init__(self, r: int, g: int, b: int, a: int = 255):
         self.r = r
         self.g = g
         self.b = b
         self.a = a
+
+    # Convert color to rgb888
+    def to_rgb888(self) -> int:
+        return (int(self.r) << 16) | (int(self.g) << 8) | int(self.b)
+
+Color.DEFAULT = Color(255, 255, 255)
 
 class Entity:
     @abstractmethod

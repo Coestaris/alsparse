@@ -9,9 +9,11 @@
 from alsparse.alsparse import Project, Track, ProjectTime, ProjectStart, Color, \
     AudioClip, MidiClip, Clip, Automation, Entity, MidiTrack, AudioTrack, \
     ReturnTrack, GroupTrack, MasterTrack
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 from abc import ABC
+import logging
 
+logger = logging.getLogger(__name__)
 
 class AbletonEntity(Entity, ABC):
     def __init__(self, name: str, color: Color, parent: Optional[Entity]):
@@ -80,6 +82,21 @@ class AbletonAutomation(AbletonEntity, Automation):
     def get_events(self) -> List[Automation.Event]:
         return [Automation.Event(time, value) for time, value in self.events]
 
+    def get_value_at(self, time: ProjectTime) -> Union[bool, float]:
+        if not self.events:
+            return 0
+
+        # Do linear interpolation
+        for i in range(len(self.events) - 1):
+            if self.events[i][0] <= time <= self.events[i + 1][0]:
+                t1, v1 = self.events[i]
+                t2, v2 = self.events[i + 1]
+
+                return v1 + (v2 - v1) * (time - t1) / (t2 - t1)
+
+        return self.events[-1][1]
+
+
 
 class AbletonTrack(AbletonEntity, Track):
     def __init__(self, name: str, color: Color, parent: Optional[Project]):
@@ -125,9 +142,18 @@ class AbletonProject(AbletonEntity, Project):
         return max([track.get_duration() for track in self.tracks])
 
     def __build_tempo_cache(self):
-        # for track in self.tracks:
-        #     self.tempo_cache.append([track.get_tempo(at) for at in range(self.duration)])
-        pass
+        master_track = next((track for track in self.tracks if isinstance(track, AbletonMasterTrack)), None)
+        if not master_track:
+            logger.warning("Master track not found")
+            return
+
+        tempo_automation = next((automation for automation in master_track.get_automations() if automation.get_target() == "Tempo"), None)
+        if not tempo_automation:
+            logger.warning("Tempo automation not found")
+            return
+
+        self.__base_tempo = tempo_automation.get_value_at(0)
+        self.__tempo_cache = [tempo_automation.get_value_at(i) for i in range(int(self.get_duration() / AbletonProject.TIME_SLICE))]
 
     def __init__(self, major_version: int, minorA: int, minorB: int, minorC: int, metadata: dict, hash: str):
         super().__init__("Project", Color(0, 0, 0, 0), None)
